@@ -171,5 +171,112 @@ def delete_line_trip(trip_id):
     finally:
         db.close()
 
+# LINE 行程細節相關路由
+@app.route('/line/trip_detail', methods=['POST'])
+def add_line_trip_detail():
+    data = request.get_json()
+    trip_id = data.get('trip_id')
+    location = data.get('location')
+    date = data.get('date')
+    start_time = data.get('start_time')
+    end_time = data.get('end_time')
+
+    if not all([trip_id, location, date, start_time, end_time]):
+        return jsonify({'error': '缺少必要欄位'}), 400
+
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            # 檢查行程是否存在
+            cur.execute("SELECT start_date, end_date FROM line_trips WHERE trip_id = %s", (trip_id,))
+            trip = cur.fetchone()
+            if not trip:
+                return jsonify({'error': '找不到對應的行程'}), 404
+                
+            # 檢查日期是否在行程範圍內
+            detail_date = datetime.strptime(date, '%Y-%m-%d').date()
+            trip_start = trip['start_date']
+            trip_end = trip['end_date']
+            
+            if detail_date < trip_start or detail_date > trip_end:
+                return jsonify({
+                    'error': '行程細節的日期必須在行程的日期範圍內',
+                    'valid_range': {
+                        'start_date': trip_start.strftime('%Y-%m-%d'),
+                        'end_date': trip_end.strftime('%Y-%m-%d')
+                    }
+                }), 400
+
+            # 新增行程細節
+            cur.execute("""
+                INSERT INTO line_trip_details 
+                (trip_id, location, date, start_time, end_time)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (trip_id, location, date, start_time, end_time))
+            
+            detail_id = cur.lastrowid
+            db.commit()
+            
+            return jsonify({
+                'message': '行程細節新增成功',
+                'detail_id': detail_id
+            }), 201
+            
+    except Exception as e:
+        print(f"新增行程細節時發生錯誤: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+@app.route('/line/trip_detail/<int:trip_id>', methods=['GET'])
+def get_line_trip_details(trip_id):
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            # 先檢查行程是否存在
+            cur.execute("SELECT trip_id FROM line_trips WHERE trip_id = %s", (trip_id,))
+            if not cur.fetchone():
+                return jsonify({'error': '找不到該行程'}), 404
+                
+            # 獲取行程細節
+            cur.execute("""
+                SELECT detail_id, trip_id, location, 
+                       DATE_FORMAT(date, '%Y-%m-%d') as date,
+                       TIME_FORMAT(start_time, '%H:%i') as start_time,
+                       TIME_FORMAT(end_time, '%H:%i') as end_time
+                FROM line_trip_details 
+                WHERE trip_id = %s 
+                ORDER BY date ASC, start_time ASC
+            """, (trip_id,))
+            
+            result = cur.fetchall()
+            return jsonify(result if result else []), 200
+            
+    except Exception as e:
+        print(f"獲取行程細節時發生錯誤: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+# 刪除單一行程細節
+@app.route('/line/trip_detail/<int:detail_id>', methods=['DELETE'])
+def delete_line_trip_detail(detail_id):
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            # 先確認該細節是否存在
+            cur.execute("SELECT detail_id FROM line_trip_details WHERE detail_id = %s", (detail_id,))
+            if not cur.fetchone():
+                return jsonify({'error': '找不到該行程細節'}), 404
+                
+            cur.execute("DELETE FROM line_trip_details WHERE detail_id = %s", (detail_id,))
+            db.commit()
+            return jsonify({'message': '行程細節刪除成功'}), 200
+    except Exception as e:
+        print(f"刪除行程細節時發生錯誤: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
