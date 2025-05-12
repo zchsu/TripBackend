@@ -238,15 +238,15 @@ def get_line_trip_details(trip_id):
             if not cur.fetchone():
                 return jsonify({'error': '找不到該行程'}), 404
                 
-            # 獲取行程細節，不在 SQL 中進行時間格式化
+            # 獲取行程細節
             cur.execute("""
                 SELECT 
                     detail_id, 
                     trip_id, 
                     location, 
-                    date,
-                    start_time,
-                    end_time
+                    DATE_FORMAT(date, '%Y-%m-%d') as date,
+                    TIME_FORMAT(start_time, '%H:%i') as start_time,
+                    TIME_FORMAT(end_time, '%H:%i') as end_time
                 FROM line_trip_details 
                 WHERE trip_id = %s 
                 ORDER BY date ASC, start_time ASC
@@ -254,16 +254,20 @@ def get_line_trip_details(trip_id):
             
             result = cur.fetchall()
             
-            # 在 Python 中處理日期和時間格式化
+            # 轉換為可序列化的格式
+            serializable_result = []
             for item in result:
-                if item['date']:
-                    item['date'] = item['date'].strftime('%Y-%m-%d')
-                if item['start_time']:
-                    item['start_time'] = item['start_time'].strftime('%H:%M')
-                if item['end_time']:
-                    item['end_time'] = item['end_time'].strftime('%H:%M')
+                serializable_item = {
+                    'detail_id': item['detail_id'],
+                    'trip_id': item['trip_id'],
+                    'location': item['location'],
+                    'date': item['date'],
+                    'start_time': item['start_time'],
+                    'end_time': item['end_time']
+                }
+                serializable_result.append(serializable_item)
             
-            return jsonify(result if result else []), 200
+            return jsonify(serializable_result if serializable_result else []), 200
             
     except Exception as e:
         print(f"獲取行程細節時發生錯誤: {str(e)}")
