@@ -244,9 +244,9 @@ def get_line_trip_details(trip_id):
                     detail_id, 
                     trip_id, 
                     location, 
-                    DATE_FORMAT(date, '%Y-%m-%d') as date,
-                    TIME_FORMAT(start_time, '%H:%i') as start_time,
-                    TIME_FORMAT(end_time, '%H:%i') as end_time
+                    DATE_FORMAT(date, '%%Y-%%m-%%d') as date,
+                    TIME_FORMAT(start_time, '%%H:%%i') as start_time,
+                    TIME_FORMAT(end_time, '%%H:%%i') as end_time
                 FROM line_trip_details 
                 WHERE trip_id = %s 
                 ORDER BY date ASC, start_time ASC
@@ -254,7 +254,7 @@ def get_line_trip_details(trip_id):
             
             result = cur.fetchall()
             
-            # 轉換為可序列化的格式
+            # 確保結果可序列化
             serializable_result = []
             for item in result:
                 serializable_item = {
