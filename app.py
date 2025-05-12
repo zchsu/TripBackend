@@ -241,9 +241,9 @@ def get_line_trip_details(trip_id):
             # 獲取行程細節
             cur.execute("""
                 SELECT detail_id, trip_id, location, 
-                       DATE_FORMAT(date, '%Y-%m-%d') as date,
-                       TIME_FORMAT(start_time, '%H:%i') as start_time,
-                       TIME_FORMAT(end_time, '%H:%i') as end_time
+                       DATE_FORMAT(date, %%Y-%%m-%%d) as date,
+                       TIME_FORMAT(start_time, %%H:%%i) as start_time,
+                       TIME_FORMAT(end_time, %%H:%%i) as end_time
                 FROM line_trip_details 
                 WHERE trip_id = %s 
                 ORDER BY date ASC, start_time ASC
