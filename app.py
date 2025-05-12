@@ -238,15 +238,15 @@ def get_line_trip_details(trip_id):
             if not cur.fetchone():
                 return jsonify({'error': '找不到該行程'}), 404
                 
-            # 獲取行程細節
+            # 獲取行程細節，不在 SQL 中進行時間格式化
             cur.execute("""
                 SELECT 
                     detail_id, 
                     trip_id, 
                     location, 
-                    date as date,
-                    TIME_FORMAT(start_time, '%H:%i') as start_time,
-                    TIME_FORMAT(end_time, '%H:%i') as end_time
+                    date,
+                    start_time,
+                    end_time
                 FROM line_trip_details 
                 WHERE trip_id = %s 
                 ORDER BY date ASC, start_time ASC
@@ -254,10 +254,14 @@ def get_line_trip_details(trip_id):
             
             result = cur.fetchall()
             
-            # 手動格式化日期
+            # 在 Python 中處理日期和時間格式化
             for item in result:
-                if 'date' in item and item['date']:
+                if item['date']:
                     item['date'] = item['date'].strftime('%Y-%m-%d')
+                if item['start_time']:
+                    item['start_time'] = item['start_time'].strftime('%H:%M')
+                if item['end_time']:
+                    item['end_time'] = item['end_time'].strftime('%H:%M')
             
             return jsonify(result if result else []), 200
             
