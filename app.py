@@ -107,18 +107,15 @@ def add_line_trip():
         with db.cursor() as cur:
             cur.execute("""
                 INSERT INTO line_trips 
-                (line_user_id, title, description, start_date, end_date, area, tags, budget, preferred_gender)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (line_user_id, title, description, start_date, end_date, area)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """, (
                 line_user_id,
                 data.get('title'),
                 data.get('description'),
                 data.get('start_date'),
                 data.get('end_date'),
-                data.get('area'),
-                data.get('tags'),
-                data.get('budget'),
-                data.get('preferred_gender', 'any')
+                data.get('area')
             ))
             
             trip_id = cur.lastrowid
