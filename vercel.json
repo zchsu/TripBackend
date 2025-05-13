@@ -1,22 +1,23 @@
 {
     "version": 2,
     "builds": [
-        {
-            "src": "app.py",
-            "use": "@vercel/python",
-            "config": {
-                "maxLambdaSize": "15mb"
-            }
+      {
+        "src": "app.py",
+        "use": "@vercel/python",
+        "config": {
+          "maxLambdaSize": "15mb",
+          "buildCommand": "sh ./build.sh"
         }
+      }
     ],
     "routes": [
-        {
-            "src": "/(.*)",
-            "dest": "app.py"
-        }
+      {
+        "src": "/(.*)",
+        "dest": "app.py"
+      }
     ],
     "env": {
-        "PYTHONPATH": ".",
-        "PLAYWRIGHT_BROWSERS_PATH": "0"
+      "PYTHONPATH": ".",
+      "PLAYWRIGHT_BROWSERS_PATH": "0"
     }
-}
+  }

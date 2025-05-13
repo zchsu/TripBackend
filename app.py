@@ -351,7 +351,17 @@ def search_lockers():
         # 使用 Playwright 爬取資料
         with sync_playwright() as p:
             # 啟動瀏覽器
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+            headless=True,
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',  
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--disable-software-rasterizer'
+                ]
+            )
             context = browser.new_context()
             page = context.new_page()
 
