@@ -11,13 +11,6 @@ from linebot.v3.webhook import WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
-# 爬蟲相關
-from playwright.sync_api import sync_playwright
-from geopy.geocoders import Nominatim
-import urllib.parse
-import time
-
-
 app = Flask(__name__)
 CORS(app)
 
@@ -318,116 +311,6 @@ def delete_line_trip_detail(detail_id):
         return jsonify({'error': str(e)}), 500
     finally:
         db.close()
-
-# 新增寄物櫃搜尋功能
-@app.route('/search-lockers', methods=['POST'])
-def search_lockers():
-    """搜尋寄物櫃資訊"""
-    try:
-        data = request.get_json()
-        if not data or 'location' not in data:
-            return jsonify({'error': '請提供搜尋位置'}), 400
-
-        # 使用 geopy 解析地址
-        geolocator = Nominatim(user_agent="my_geocoder")
-        location_data = geolocator.geocode(data['location'])
-        
-        if not location_data:
-            return jsonify({'error': '無法找到該地點'}), 400
-
-        # 建構搜尋參數
-        search_params = {
-            'location': data['location'],
-            'startDate': data.get('startDate', time.strftime('%Y-%m-%d')),
-            'endDate': data.get('endDate', data.get('startDate')),
-            'startTimeHour': data.get('startTimeHour', '10'),
-            'startTimeMin': data.get('startTimeMin', '00'),
-            'endTimeHour': data.get('endTimeHour', '18'),
-            'endTimeMin': data.get('endTimeMin', '00'),
-            'bagSize': data.get('bagSize', '0'),
-            'suitcaseSize': data.get('suitcaseSize', '0')
-        }
-
-        # 使用 Playwright 爬取資料
-        with sync_playwright() as p:
-            # 啟動瀏覽器
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--disable-gpu',
-                    '--single-process',
-                    '--no-zygote'
-                ]
-            )
-            context = browser.new_context()
-            page = context.new_page()
-
-            # 構建 URL
-            base_url = "https://cloak.ecbo.io/zh-TW/locations"
-            params = {
-                'name': search_params['location'],
-                'lat': location_data.latitude,
-                'lon': location_data.longitude,
-                'startDate': search_params['startDate'],
-                'endDate': search_params['endDate'],
-                'startDateTimeHour': search_params['startTimeHour'],
-                'startDateTimeMin': search_params['startTimeMin'],
-                'endDateTimeHour': search_params['endTimeHour'],
-                'endDateTimeMin': search_params['endTimeMin'],
-                'bagSize': search_params['bagSize'],
-                'suitcaseSize': search_params['suitcaseSize']
-            }
-            
-            query_string = urllib.parse.urlencode(params)
-            url = f"{base_url}?{query_string}"
-            print(f"訪問 URL: {url}")
-            
-            # 訪問網頁
-            page.goto(url)
-            
-            # 等待結果載入
-            page.wait_for_selector('.SpaceCard_space__YnURE', timeout=10000)
-            
-            # 解析結果
-            results = page.evaluate('''() => {
-                const cards = document.querySelectorAll('.SpaceCard_space__YnURE');
-                return Array.from(cards).map(card => {
-                    const nameElement = card.querySelector('.SpaceCard_nameText__308Dp');
-                    const categoryElement = card.querySelector('.SpaceCard_category__2rx7q');
-                    const ratingElement = card.querySelector('.SpaceCard_ratingPoint__2CaOa');
-                    const suitcasePriceElement = card.querySelector('.SpaceCard_priceCarry__3Owgr');
-                    const bagPriceElement = card.querySelector('.SpaceCard_priceBag__Bv_Oz');
-                    const imageElement = card.querySelector('img');
-                    const linkElement = card.querySelector('.SpaceCard_spaceLink__2MeRc');
-
-                    return {
-                        name: nameElement ? nameElement.textContent.trim() : '未知名稱',
-                        category: categoryElement ? categoryElement.textContent.trim() : '未分類',
-                        rating: ratingElement ? ratingElement.textContent.trim() : 'N/A',
-                        suitcase_price: suitcasePriceElement ? suitcasePriceElement.textContent.trim() : '價格未知',
-                        bag_price: bagPriceElement ? bagPriceElement.textContent.trim() : '價格未知',
-                        image_url: imageElement ? imageElement.src : '',
-                        link: linkElement ? 'https://cloak.ecbo.io' + linkElement.getAttribute('href') : '#'
-                    };
-                });
-            }''')
-
-            # 關閉瀏覽器
-            browser.close()
-
-            return jsonify({
-                'success': True,
-                'results': results,
-                'search_params': search_params
-            }), 200
-
-    except Exception as e:
-        print(f"搜尋寄物櫃時發生錯誤: {str(e)}")
-        return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
