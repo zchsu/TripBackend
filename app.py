@@ -352,14 +352,16 @@ def search_lockers():
         with sync_playwright() as p:
             # 啟動瀏覽器
             browser = p.chromium.launch(
-            headless=True,
-            args=[
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',  
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu',
-                '--disable-software-rasterizer'
+                headless=True,
+                executable_path=os.getenv('PLAYWRIGHT_BROWSERS_PATH', None),
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--disable-gpu',
+                    '--disable-software-rasterizer',
+                    '--single-process'
                 ]
             )
             context = browser.new_context()
