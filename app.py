@@ -99,32 +99,52 @@ def create_line_user():
 
 @app.route('/line/trip', methods=['POST'])
 def add_line_trip():
-    data = request.get_json()
-    line_user_id = data.get('line_user_id')
-    
-    db = get_db()
     try:
-        with db.cursor() as cur:
-            cur.execute("""
-                INSERT INTO line_trips 
-                (line_user_id, title, description, start_date, end_date, area)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (
-                line_user_id,
-                data.get('title'),
-                data.get('description'),
-                data.get('start_date'),
-                data.get('end_date'),
-                data.get('area')
-            ))
+        data = request.get_json()
+        print(f"接收到的資料: {data}")  # 印出接收到的資料
+        
+        if not data:
+            return jsonify({'error': '未接收到資料'}), 400
             
-            trip_id = cur.lastrowid
-            db.commit()
-            return jsonify({'message': '行程新增成功', 'trip_id': trip_id}), 201
+        line_user_id = data.get('line_user_id')
+        if not line_user_id:
+            return jsonify({'error': '缺少 line_user_id'}), 400
+        
+        required_fields = ['title', 'start_date', 'end_date', 'area']
+        missing_fields = [field for field in required_fields if not data.get(field)]
+        if missing_fields:
+            return jsonify({'error': f'缺少必要欄位: {", ".join(missing_fields)}'}), 400
+    
+        db = get_db()
+        try:
+            with db.cursor() as cur:
+                print(f"準備執行 SQL 插入...")  # 印出執行狀態
+                cur.execute("""
+                    INSERT INTO line_trips 
+                    (line_user_id, title, description, start_date, end_date, area)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    line_user_id,
+                    data.get('title'),
+                    data.get('description'),
+                    data.get('start_date'),
+                    data.get('end_date'),
+                    data.get('area')
+                ))
+                
+                trip_id = cur.lastrowid
+                db.commit()
+                print(f"成功新增行程，ID: {trip_id}")  # 印出成功訊息
+                return jsonify({'message': '行程新增成功', 'trip_id': trip_id}), 201
+        except Exception as db_error:
+            print(f"資料庫錯誤: {str(db_error)}")  # 印出資料庫錯誤
+            return jsonify({'error': f'資料庫錯誤: {str(db_error)}'}), 500
+        finally:
+            db.close()
+            
     except Exception as e:
+        print(f"處理請求時發生錯誤: {str(e)}")  # 印出一般錯誤
         return jsonify({'error': str(e)}), 500
-    finally:
-        db.close()
 
 @app.route('/line/trip/<line_user_id>', methods=['GET'])
 def get_line_trips(line_user_id):
