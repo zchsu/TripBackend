@@ -11,6 +11,14 @@ from linebot.v3.webhook import WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
+# 添加新的導入
+from datetime import datetime
+import requests
+from bs4 import BeautifulSoup
+from geopy.geocoders import Nominatim
+import urllib.parse
+import time
+
 app = Flask(__name__)
 CORS(app)
 
@@ -311,6 +319,152 @@ def delete_line_trip_detail(detail_id):
         return jsonify({'error': str(e)}), 500
     finally:
         db.close()
+
+# 緩存存儲
+cache = {}
+CACHE_EXPIRY = 3600  # 緩存過期時間（秒）
+
+def get_cache_key(search_params, page):
+    """生成緩存鍵"""
+    key_parts = [
+        search_params['location'],
+        search_params['startDate'],
+        search_params.get('endDate', search_params['startDate']),
+        f"{search_params['startTimeHour']}:{search_params['startTimeMin']}",
+        f"{search_params['endTimeHour']}:{search_params['endTimeMin']}",
+        search_params['bagSize'],
+        search_params['suitcaseSize'],
+        str(page)
+    ]
+    return "_".join(key_parts)
+
+def scrape_lockers(search_params, page=1, per_page=5):
+    """爬取寄物櫃資訊 - 使用 requests"""
+    try:
+        # 使用 geopy 解析地址
+        geolocator = Nominatim(user_agent="my_geocoder")
+        location_data = geolocator.geocode(search_params['location'])
+        
+        if not location_data:
+            return {'error': '無法找到該地點'}
+        
+        # 構建搜尋 URL
+        base_url = "https://cloak.ecbo.io/zh-TW/locations"
+        params = {
+            'name': search_params['location'],
+            'startDate': search_params['startDate'],
+            'endDate': search_params.get('endDate', search_params['startDate']),
+            'startDateTimeHour': search_params['startTimeHour'],
+            'startDateTimeMin': search_params['startTimeMin'],
+            'endDateTimeHour': search_params['endTimeHour'],
+            'endDateTimeMin': search_params['endTimeMin'],
+            'bagSize': search_params['bagSize'],
+            'suitcaseSize': search_params['suitcaseSize'],
+            'lat': location_data.latitude,
+            'lon': location_data.longitude,
+            'page': page
+        }
+        
+        # 發送請求
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(base_url, params=params, headers=headers)
+        response.raise_for_status()
+        
+        # 解析 HTML
+        soup = BeautifulSoup(response.text, 'lxml')
+        cards = soup.find_all('li', class_='SpaceCard_space__YnURE')
+        
+        # 解析結果
+        results = []
+        for card in cards[(page-1)*per_page:page*per_page]:
+            try:
+                name_element = card.find('strong', class_='SpaceCard_nameText__308Dp')
+                category_element = card.find('div', class_='SpaceCard_category__2rx7q')
+                rating_element = card.find('span', class_='SpaceCard_ratingPoint__2CaOa')
+                suitcase_price_element = card.find('span', class_='SpaceCard_priceCarry__3Owgr')
+                bag_price_element = card.find('span', class_='SpaceCard_priceBag__Bv_Oz')
+                image_element = card.find('img')
+                link_element = card.find('a', class_='SpaceCard_spaceLink__2MeRc')
+                
+                result = {
+                    'name': name_element.text.strip() if name_element else '未知名稱',
+                    'category': category_element.text.strip() if category_element else '未分類',
+                    'rating': rating_element.text.strip() if rating_element else 'N/A',
+                    'suitcase_price': suitcase_price_element.text.strip() if suitcase_price_element else '價格未知',
+                    'bag_price': bag_price_element.text.strip() if bag_price_element else '價格未知',
+                    'image_url': image_element['src'] if image_element and 'src' in image_element.attrs else '',
+                    'link': f"https://cloak.ecbo.io{link_element['href']}" if link_element else '#'
+                }
+                results.append(result)
+            except Exception as e:
+                print(f"解析卡片時發生錯誤: {str(e)}")
+                continue
+        
+        total_items = len(cards)
+        total_pages = (total_items + per_page - 1) // per_page
+        
+        return {
+            'results': results,
+            'pagination': {
+                'current_page': page,
+                'total_pages': total_pages,
+                'total_items': total_items,
+                'per_page': per_page
+            }
+        }
+        
+    except Exception as e:
+        print(f"爬蟲錯誤: {str(e)}")
+        return {'error': str(e)}
+
+@app.route('/search-lockers', methods=['POST'])
+def search_lockers():
+    try:
+        data = request.get_json()
+        page = int(data.get('page', 1))
+        per_page = int(data.get('per_page', 5))
+        
+        # 驗證必要欄位
+        required_fields = ['location', 'startDate', 'startTimeHour', 
+                         'startTimeMin', 'endTimeHour', 'endTimeMin']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({
+                    'error': f'缺少必要欄位: {field}',
+                    'received_data': data
+                }), 400
+        
+        # 設置默認值
+        data.setdefault('bagSize', '0')
+        data.setdefault('suitcaseSize', '0')
+        data.setdefault('endDate', data['startDate'])
+        
+        # 檢查緩存
+        cache_key = get_cache_key(data, page)
+        current_time = datetime.now().timestamp()
+        
+        if cache_key in cache and (current_time - cache[cache_key]['timestamp']) < CACHE_EXPIRY:
+            return jsonify(cache[cache_key]['data']), 200
+        
+        # 爬取數據
+        results = scrape_lockers(data, page, per_page)
+        
+        if 'error' in results:
+            return jsonify(results), 400
+        
+        # 保存到緩存
+        cache[cache_key] = {
+            'data': results,
+            'timestamp': current_time
+        }
+        
+        return jsonify(results), 200
+        
+    except Exception as e:
+        print(f"API error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
