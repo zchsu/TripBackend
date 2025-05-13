@@ -348,26 +348,36 @@ def scrape_lockers(search_params, page=1, per_page=5):
         if not location_data:
             return {'error': '無法找到該地點'}
         
-        # 構建搜尋 URL
-        base_url = "https://cloak.ecbo.io/search/result"  # 改用實際的 API 端點
+        # 修改為正確的 URL 和參數
+        base_url = "https://cloak.ecbo.io/zh-TW/locations"
         params = {
-            'query': search_params['location'],
-            'date': search_params['startDate'],
-            'startTime': f"{search_params['startTimeHour']}:{search_params['startTimeMin']}",
-            'endTime': f"{search_params['endTimeHour']}:{search_params['endTimeMin']}",
+            'name': search_params['location'],
+            'startDate': search_params['startDate'],
+            'endDate': search_params.get('endDate', search_params['startDate']),
+            'startDateTimeHour': search_params['startTimeHour'],
+            'startDateTimeMin': search_params['startTimeMin'],
+            'endDateTimeHour': search_params['endTimeHour'],
+            'endDateTimeMin': search_params['endTimeMin'],
             'bagSize': search_params['bagSize'],
             'suitcaseSize': search_params['suitcaseSize'],
             'lat': location_data.latitude,
-            'lng': location_data.longitude,
+            'lon': location_data.longitude,
             'page': page
         }
         
-        # 發送請求
+        # 更新請求標頭
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-            'Referer': 'https://cloak.ecbo.io/',
-            'Origin': 'https://cloak.ecbo.io'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Referer': 'https://cloak.ecbo.io/zh-TW',
+            'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-User': '?1'
         }
         
         print(f"發送請求到: {base_url}")
