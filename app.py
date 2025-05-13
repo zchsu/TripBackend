@@ -11,13 +11,12 @@ from linebot.v3.webhook import WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
-# 添加新的導入
-from datetime import datetime
-import requests
-from bs4 import BeautifulSoup
+# 爬蟲相關
+from playwright.sync_api import sync_playwright
 from geopy.geocoders import Nominatim
 import urllib.parse
 import time
+
 
 app = Flask(__name__)
 CORS(app)
@@ -320,179 +319,103 @@ def delete_line_trip_detail(detail_id):
     finally:
         db.close()
 
-# 緩存存儲
-cache = {}
-CACHE_EXPIRY = 3600  # 緩存過期時間（秒）
-
-def get_cache_key(search_params, page):
-    """生成緩存鍵"""
-    key_parts = [
-        search_params['location'],
-        search_params['startDate'],
-        search_params.get('endDate', search_params['startDate']),
-        f"{search_params['startTimeHour']}:{search_params['startTimeMin']}",
-        f"{search_params['endTimeHour']}:{search_params['endTimeMin']}",
-        search_params['bagSize'],
-        search_params['suitcaseSize'],
-        str(page)
-    ]
-    return "_".join(key_parts)
-
-def scrape_lockers(search_params, page=1, per_page=5):
-    """爬取寄物櫃資訊 - 使用 requests"""
-    try:
-        # 使用 geopy 解析地址
-        geolocator = Nominatim(user_agent="my_geocoder")
-        location_data = geolocator.geocode(search_params['location'])
-        
-        if not location_data:
-            return {'error': '無法找到該地點'}
-        
-        # 修改為正確的 URL 和參數
-        base_url = "https://cloak.ecbo.io/zh-TW/locations"
-        params = {
-            'name': search_params['location'],
-            'startDate': search_params['startDate'],
-            'endDate': search_params.get('endDate', search_params['startDate']),
-            'startDateTimeHour': search_params['startTimeHour'],
-            'startDateTimeMin': search_params['startTimeMin'],
-            'endDateTimeHour': search_params['endTimeHour'],
-            'endDateTimeMin': search_params['endTimeMin'],
-            'bagSize': search_params['bagSize'],
-            'suitcaseSize': search_params['suitcaseSize'],
-            'lat': location_data.latitude,
-            'lon': location_data.longitude,
-            'page': page
-        }
-        
-        # 更新請求標頭
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Referer': 'https://cloak.ecbo.io/zh-TW',
-            'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'same-origin',
-            'Sec-Fetch-User': '?1'
-        }
-        
-        print(f"發送請求到: {base_url}")
-        print(f"參數: {params}")
-        
-        response = requests.get(base_url, params=params, headers=headers)
-        response.raise_for_status()
-        
-        print(f"回應狀態碼: {response.status_code}")
-        print(f"回應內容: {response.text[:200]}...")  # 只印出前 200 字元
-        
-        # 解析 HTML
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # 使用更多選擇器嘗試找到結果
-        cards = soup.select('.SpaceCard_space__YnURE, .space-card, .location-card')
-        
-        print(f"找到 {len(cards)} 個結果")
-        
-        if not cards:
-            print("找不到卡片，嘗試其他選擇器")
-            # 嘗試其他可能的選擇器
-            cards = soup.select('li[class*="SpaceCard"], div[class*="space"], .shop-card')
-            print(f"使用替代選擇器後找到 {len(cards)} 個結果")
-        
-        # 解析結果
-        results = []
-        for card in cards:
-            try:
-                # 更靈活的選擇器
-                name = card.select_one('[class*="name"], [class*="title"]')
-                category = card.select_one('[class*="category"]')
-                rating = card.select_one('[class*="rating"], [class*="score"]')
-                suitcase_price = card.select_one('[class*="priceCarry"], [class*="suitcase-price"]')
-                bag_price = card.select_one('[class*="priceBag"], [class*="bag-price"]')
-                image = card.select_one('img')
-                link = card.select_one('a')
-                
-                result = {
-                    'name': name.text.strip() if name else '未知名稱',
-                    'category': category.text.strip() if category else '未分類',
-                    'rating': rating.text.strip() if rating else 'N/A',
-                    'suitcase_price': suitcase_price.text.strip() if suitcase_price else '價格未知',
-                    'bag_price': bag_price.text.strip() if bag_price else '價格未知',
-                    'image_url': image['src'] if image and 'src' in image.attrs else '',
-                    'link': f"https://cloak.ecbo.io{link['href']}" if link and 'href' in link.attrs else '#'
-                }
-                results.append(result)
-                print(f"成功解析一個結果: {result['name']}")
-            except Exception as e:
-                print(f"解析卡片時發生錯誤: {str(e)}")
-                continue
-        
-        total_items = len(results)
-        total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 1
-        
-        return {
-            'results': results[(page-1)*per_page:page*per_page],
-            'pagination': {
-                'current_page': page,
-                'total_pages': total_pages,
-                'total_items': total_items,
-                'per_page': per_page
-            }
-        }
-        
-    except Exception as e:
-        print(f"爬蟲錯誤: {str(e)}")
-        return {'error': str(e)}
-
+# 新增寄物櫃搜尋功能
 @app.route('/search-lockers', methods=['POST'])
 def search_lockers():
+    """搜尋寄物櫃資訊"""
     try:
         data = request.get_json()
-        page = int(data.get('page', 1))
-        per_page = int(data.get('per_page', 5))
+        if not data or 'location' not in data:
+            return jsonify({'error': '請提供搜尋位置'}), 400
+
+        # 使用 geopy 解析地址
+        geolocator = Nominatim(user_agent="my_geocoder")
+        location_data = geolocator.geocode(data['location'])
         
-        # 驗證必要欄位
-        required_fields = ['location', 'startDate', 'startTimeHour', 
-                         'startTimeMin', 'endTimeHour', 'endTimeMin']
-        for field in required_fields:
-            if not data.get(field):
-                return jsonify({
-                    'error': f'缺少必要欄位: {field}',
-                    'received_data': data
-                }), 400
-        
-        # 設置默認值
-        data.setdefault('bagSize', '0')
-        data.setdefault('suitcaseSize', '0')
-        data.setdefault('endDate', data['startDate'])
-        
-        # 檢查緩存
-        cache_key = get_cache_key(data, page)
-        current_time = datetime.now().timestamp()
-        
-        if cache_key in cache and (current_time - cache[cache_key]['timestamp']) < CACHE_EXPIRY:
-            return jsonify(cache[cache_key]['data']), 200
-        
-        # 爬取數據
-        results = scrape_lockers(data, page, per_page)
-        
-        if 'error' in results:
-            return jsonify(results), 400
-        
-        # 保存到緩存
-        cache[cache_key] = {
-            'data': results,
-            'timestamp': current_time
+        if not location_data:
+            return jsonify({'error': '無法找到該地點'}), 400
+
+        # 建構搜尋參數
+        search_params = {
+            'location': data['location'],
+            'startDate': data.get('startDate', time.strftime('%Y-%m-%d')),
+            'endDate': data.get('endDate', data.get('startDate')),
+            'startTimeHour': data.get('startTimeHour', '10'),
+            'startTimeMin': data.get('startTimeMin', '00'),
+            'endTimeHour': data.get('endTimeHour', '18'),
+            'endTimeMin': data.get('endTimeMin', '00'),
+            'bagSize': data.get('bagSize', '0'),
+            'suitcaseSize': data.get('suitcaseSize', '0')
         }
-        
-        return jsonify(results), 200
-        
+
+        # 使用 Playwright 爬取資料
+        with sync_playwright() as p:
+            # 啟動瀏覽器
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context()
+            page = context.new_page()
+
+            # 構建 URL
+            base_url = "https://cloak.ecbo.io/zh-TW/locations"
+            params = {
+                'name': search_params['location'],
+                'lat': location_data.latitude,
+                'lon': location_data.longitude,
+                'startDate': search_params['startDate'],
+                'endDate': search_params['endDate'],
+                'startDateTimeHour': search_params['startTimeHour'],
+                'startDateTimeMin': search_params['startTimeMin'],
+                'endDateTimeHour': search_params['endTimeHour'],
+                'endDateTimeMin': search_params['endTimeMin'],
+                'bagSize': search_params['bagSize'],
+                'suitcaseSize': search_params['suitcaseSize']
+            }
+            
+            query_string = urllib.parse.urlencode(params)
+            url = f"{base_url}?{query_string}"
+            print(f"訪問 URL: {url}")
+            
+            # 訪問網頁
+            page.goto(url)
+            
+            # 等待結果載入
+            page.wait_for_selector('.SpaceCard_space__YnURE', timeout=10000)
+            
+            # 解析結果
+            results = page.evaluate('''() => {
+                const cards = document.querySelectorAll('.SpaceCard_space__YnURE');
+                return Array.from(cards).map(card => {
+                    const nameElement = card.querySelector('.SpaceCard_nameText__308Dp');
+                    const categoryElement = card.querySelector('.SpaceCard_category__2rx7q');
+                    const ratingElement = card.querySelector('.SpaceCard_ratingPoint__2CaOa');
+                    const suitcasePriceElement = card.querySelector('.SpaceCard_priceCarry__3Owgr');
+                    const bagPriceElement = card.querySelector('.SpaceCard_priceBag__Bv_Oz');
+                    const imageElement = card.querySelector('img');
+                    const linkElement = card.querySelector('.SpaceCard_spaceLink__2MeRc');
+
+                    return {
+                        name: nameElement ? nameElement.textContent.trim() : '未知名稱',
+                        category: categoryElement ? categoryElement.textContent.trim() : '未分類',
+                        rating: ratingElement ? ratingElement.textContent.trim() : 'N/A',
+                        suitcase_price: suitcasePriceElement ? suitcasePriceElement.textContent.trim() : '價格未知',
+                        bag_price: bagPriceElement ? bagPriceElement.textContent.trim() : '價格未知',
+                        image_url: imageElement ? imageElement.src : '',
+                        link: linkElement ? 'https://cloak.ecbo.io' + linkElement.getAttribute('href') : '#'
+                    };
+                });
+            }''')
+
+            # 關閉瀏覽器
+            browser.close()
+
+            return jsonify({
+                'success': True,
+                'results': results,
+                'search_params': search_params
+            }), 200
+
     except Exception as e:
-        print(f"API error: {str(e)}")
+        print(f"搜尋寄物櫃時發生錯誤: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
