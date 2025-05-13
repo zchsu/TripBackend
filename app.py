@@ -373,7 +373,7 @@ def scrape_lockers(search_params, page=1, per_page=5):
         response.raise_for_status()
         
         # 解析 HTML
-        soup = BeautifulSoup(response.text, 'lxml')
+        soup = BeautifulSoup(response.text, 'html.parser')
         cards = soup.find_all('li', class_='SpaceCard_space__YnURE')
         
         # 解析結果
