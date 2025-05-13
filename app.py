@@ -349,64 +349,83 @@ def scrape_lockers(search_params, page=1, per_page=5):
             return {'error': '無法找到該地點'}
         
         # 構建搜尋 URL
-        base_url = "https://cloak.ecbo.io/zh-TW/locations"
+        base_url = "https://cloak.ecbo.io/search/result"  # 改用實際的 API 端點
         params = {
-            'name': search_params['location'],
-            'startDate': search_params['startDate'],
-            'endDate': search_params.get('endDate', search_params['startDate']),
-            'startDateTimeHour': search_params['startTimeHour'],
-            'startDateTimeMin': search_params['startTimeMin'],
-            'endDateTimeHour': search_params['endTimeHour'],
-            'endDateTimeMin': search_params['endTimeMin'],
+            'query': search_params['location'],
+            'date': search_params['startDate'],
+            'startTime': f"{search_params['startTimeHour']}:{search_params['startTimeMin']}",
+            'endTime': f"{search_params['endTimeHour']}:{search_params['endTimeMin']}",
             'bagSize': search_params['bagSize'],
             'suitcaseSize': search_params['suitcaseSize'],
             'lat': location_data.latitude,
-            'lon': location_data.longitude,
+            'lng': location_data.longitude,
             'page': page
         }
         
         # 發送請求
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://cloak.ecbo.io/',
+            'Origin': 'https://cloak.ecbo.io'
         }
+        
+        print(f"發送請求到: {base_url}")
+        print(f"參數: {params}")
+        
         response = requests.get(base_url, params=params, headers=headers)
         response.raise_for_status()
         
+        print(f"回應狀態碼: {response.status_code}")
+        print(f"回應內容: {response.text[:200]}...")  # 只印出前 200 字元
+        
         # 解析 HTML
         soup = BeautifulSoup(response.text, 'html.parser')
-        cards = soup.find_all('li', class_='SpaceCard_space__YnURE')
+        
+        # 使用更多選擇器嘗試找到結果
+        cards = soup.select('.SpaceCard_space__YnURE, .space-card, .location-card')
+        
+        print(f"找到 {len(cards)} 個結果")
+        
+        if not cards:
+            print("找不到卡片，嘗試其他選擇器")
+            # 嘗試其他可能的選擇器
+            cards = soup.select('li[class*="SpaceCard"], div[class*="space"], .shop-card')
+            print(f"使用替代選擇器後找到 {len(cards)} 個結果")
         
         # 解析結果
         results = []
-        for card in cards[(page-1)*per_page:page*per_page]:
+        for card in cards:
             try:
-                name_element = card.find('strong', class_='SpaceCard_nameText__308Dp')
-                category_element = card.find('div', class_='SpaceCard_category__2rx7q')
-                rating_element = card.find('span', class_='SpaceCard_ratingPoint__2CaOa')
-                suitcase_price_element = card.find('span', class_='SpaceCard_priceCarry__3Owgr')
-                bag_price_element = card.find('span', class_='SpaceCard_priceBag__Bv_Oz')
-                image_element = card.find('img')
-                link_element = card.find('a', class_='SpaceCard_spaceLink__2MeRc')
+                # 更靈活的選擇器
+                name = card.select_one('[class*="name"], [class*="title"]')
+                category = card.select_one('[class*="category"]')
+                rating = card.select_one('[class*="rating"], [class*="score"]')
+                suitcase_price = card.select_one('[class*="priceCarry"], [class*="suitcase-price"]')
+                bag_price = card.select_one('[class*="priceBag"], [class*="bag-price"]')
+                image = card.select_one('img')
+                link = card.select_one('a')
                 
                 result = {
-                    'name': name_element.text.strip() if name_element else '未知名稱',
-                    'category': category_element.text.strip() if category_element else '未分類',
-                    'rating': rating_element.text.strip() if rating_element else 'N/A',
-                    'suitcase_price': suitcase_price_element.text.strip() if suitcase_price_element else '價格未知',
-                    'bag_price': bag_price_element.text.strip() if bag_price_element else '價格未知',
-                    'image_url': image_element['src'] if image_element and 'src' in image_element.attrs else '',
-                    'link': f"https://cloak.ecbo.io{link_element['href']}" if link_element else '#'
+                    'name': name.text.strip() if name else '未知名稱',
+                    'category': category.text.strip() if category else '未分類',
+                    'rating': rating.text.strip() if rating else 'N/A',
+                    'suitcase_price': suitcase_price.text.strip() if suitcase_price else '價格未知',
+                    'bag_price': bag_price.text.strip() if bag_price else '價格未知',
+                    'image_url': image['src'] if image and 'src' in image.attrs else '',
+                    'link': f"https://cloak.ecbo.io{link['href']}" if link and 'href' in link.attrs else '#'
                 }
                 results.append(result)
+                print(f"成功解析一個結果: {result['name']}")
             except Exception as e:
                 print(f"解析卡片時發生錯誤: {str(e)}")
                 continue
         
-        total_items = len(cards)
-        total_pages = (total_items + per_page - 1) // per_page
+        total_items = len(results)
+        total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 1
         
         return {
-            'results': results,
+            'results': results[(page-1)*per_page:page*per_page],
             'pagination': {
                 'current_page': page,
                 'total_pages': total_pages,
