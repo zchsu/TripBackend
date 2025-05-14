@@ -197,6 +197,15 @@ def delete_line_trip(trip_id):
 @app.route('/line/trip_detail', methods=['POST'])
 def add_line_trip_detail():
     data = request.get_json()
+    
+    # 檢查必要欄位
+    required_fields = ['trip_id', 'location', 'date', 'start_time', 'end_time']
+    missing_fields = [field for field in required_fields if not data.get(field)]
+    if missing_fields:
+        return jsonify({
+            'error': f'缺少必要欄位: {", ".join(missing_fields)}'
+        }), 400
+
     trip_id = data.get('trip_id')
     location = data.get('location')
     date = data.get('date')
