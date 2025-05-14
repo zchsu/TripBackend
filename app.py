@@ -26,6 +26,7 @@ def get_db():
         ssl={'ssl': True}
     )
 
+# test route
 @app.route("/", methods=['GET'])
 def index():
     return "Line Bot Server is running!"
@@ -55,6 +56,7 @@ def linebot():
         print(f"Error: {e}")
     return 'OK'
 
+# get user info
 @app.route('/line/user', methods=['POST'])
 def create_line_user():
     try:
@@ -97,6 +99,7 @@ def create_line_user():
         print(f"處理請求時發生錯誤: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# insert trip
 @app.route('/line/trip', methods=['POST'])
 def add_line_trip():
     try:
@@ -146,6 +149,7 @@ def add_line_trip():
         print(f"處理請求時發生錯誤: {str(e)}")  # 印出一般錯誤
         return jsonify({'error': str(e)}), 500
 
+# get trip list by user id
 @app.route('/line/trip/<line_user_id>', methods=['GET'])
 def get_line_trips(line_user_id):
     db = get_db()
@@ -164,6 +168,7 @@ def get_line_trips(line_user_id):
     finally:
         db.close()
 
+# delete trip
 @app.route('/line/trip/<int:trip_id>', methods=['DELETE'])
 def delete_line_trip(trip_id):
     db = get_db()
@@ -188,7 +193,7 @@ def delete_line_trip(trip_id):
     finally:
         db.close()
 
-# LINE 行程細節相關路由
+# insert trip detail
 @app.route('/line/trip_detail', methods=['POST'])
 def add_line_trip_detail():
     data = request.get_json()
@@ -245,6 +250,7 @@ def add_line_trip_detail():
     finally:
         db.close()
 
+# get trip detail by trip id
 @app.route('/line/trip_detail/<int:trip_id>', methods=['GET'])
 def get_line_trip_details(trip_id):
     db = get_db()
@@ -292,7 +298,7 @@ def get_line_trip_details(trip_id):
     finally:
         db.close()
 
-# 刪除單一行程細節
+# delete trip detail
 @app.route('/line/trip_detail/<int:detail_id>', methods=['DELETE'])
 def delete_line_trip_detail(detail_id):
     db = get_db()
@@ -308,6 +314,99 @@ def delete_line_trip_detail(detail_id):
             return jsonify({'message': '行程細節刪除成功'}), 200
     except Exception as e:
         print(f"刪除行程細節時發生錯誤: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+# update trip
+@app.route('/line/trip/<int:trip_id>', methods=['PUT'])
+def update_line_trip(trip_id):
+    try:
+        data = request.get_json()
+        db = get_db()
+        
+        with db.cursor() as cur:
+            # 檢查行程是否存在
+            cur.execute("SELECT trip_id FROM line_trips WHERE trip_id = %s", (trip_id,))
+            if not cur.fetchone():
+                return jsonify({'error': '找不到該行程'}), 404
+
+            # 更新行程
+            cur.execute("""
+                UPDATE line_trips 
+                SET title = %s, description = %s, start_date = %s, 
+                    end_date = %s, area = %s
+                WHERE trip_id = %s
+            """, (
+                data.get('title'),
+                data.get('description'),
+                data.get('start_date'),
+                data.get('end_date'),
+                data.get('area'),
+                trip_id
+            ))
+            
+            db.commit()
+            return jsonify({'message': '行程更新成功'}), 200
+            
+    except Exception as e:
+        print(f"更新行程時發生錯誤: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
+# update trip detail
+@app.route('/line/trip_detail/<int:detail_id>', methods=['PUT'])
+def update_line_trip_detail(detail_id):
+    try:
+        data = request.get_json()
+        db = get_db()
+        
+        with db.cursor() as cur:
+            # 檢查細節是否存在
+            cur.execute("""
+                SELECT d.detail_id, t.start_date, t.end_date 
+                FROM line_trip_details d
+                JOIN line_trips t ON d.trip_id = t.trip_id
+                WHERE d.detail_id = %s
+            """, (detail_id,))
+            
+            result = cur.fetchone()
+            if not result:
+                return jsonify({'error': '找不到該行程細節'}), 404
+
+            # 檢查日期是否在行程範圍內
+            detail_date = datetime.strptime(data['date'], '%Y-%m-%d').date()
+            trip_start = result['start_date']
+            trip_end = result['end_date']
+            
+            if detail_date < trip_start or detail_date > trip_end:
+                return jsonify({
+                    'error': '行程細節的日期必須在行程的日期範圍內',
+                    'valid_range': {
+                        'start_date': trip_start.strftime('%Y-%m-%d'),
+                        'end_date': trip_end.strftime('%Y-%m-%d')
+                    }
+                }), 400
+
+            # 更新行程細節
+            cur.execute("""
+                UPDATE line_trip_details 
+                SET location = %s, date = %s, start_time = %s, end_time = %s
+                WHERE detail_id = %s
+            """, (
+                data['location'],
+                data['date'],
+                data['start_time'],
+                data['end_time'],
+                detail_id
+            ))
+            
+            db.commit()
+            return jsonify({'message': '行程細節更新成功'}), 200
+            
+    except Exception as e:
+        print(f"更新行程細節時發生錯誤: {str(e)}")
         return jsonify({'error': str(e)}), 500
     finally:
         db.close()
