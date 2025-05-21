@@ -149,7 +149,24 @@ def add_line_trip():
         print(f"處理請求時發生錯誤: {str(e)}")  # 印出一般錯誤
         return jsonify({'error': str(e)}), 500
 
-
+# get trip list by user id
+@app.route('/line/trip/<line_user_id>', methods=['GET'])
+def get_line_trips(line_user_id):
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            cur.execute("""
+                SELECT * FROM line_trips 
+                WHERE line_user_id = %s 
+                ORDER BY start_date ASC
+            """, (line_user_id,))
+            
+            result = cur.fetchall()
+            return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
 
 # delete trip
 @app.route('/line/trip/<int:trip_id>', methods=['DELETE'])
@@ -437,9 +454,8 @@ def share_trip():
         data = request.get_json()
         trip_id = data.get('trip_id')
         shared_user_id = data.get('shared_user_id')
-        owner_id = data.get('owner_id')
         
-        if not all([trip_id, shared_user_id, owner_id]):
+        if not all([trip_id, shared_user_id]):
             return jsonify({'error': '缺少必要參數'}), 400
 
         db = get_db()
@@ -456,7 +472,7 @@ def share_trip():
                     (trip_id, shared_user_id, created_by)
                     VALUES (%s, %s, %s)
                     ON DUPLICATE KEY UPDATE shared_user_id = shared_user_id
-                """, (trip_id, shared_user_id, owner_id))
+                """, (trip_id, shared_user_id))
                 
                 db.commit()
                 return jsonify({'message': '分享成功'}), 200
