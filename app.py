@@ -427,32 +427,37 @@ def update_line_trip_detail(detail_id):
             data = request.get_json()
             trip_id = data.get('trip_id')
             shared_user_id = data.get('shared_user_id')
-            permission_type = data.get('permission_type', 'view')
+            permission_type = data.get('permission_type', 'edit')
 
             if not all([trip_id, shared_user_id]):
                 return jsonify({'error': '缺少必要參數'}), 400
 
             db = get_db()
             with db.cursor() as cur:
-                # 檢查用戶是否存在
-                cur.execute("SELECT line_user_id FROM line_users WHERE line_user_id = %s", (shared_user_id,))
+                # 檢查行程是否存在
+                cur.execute("SELECT trip_id FROM line_trips WHERE trip_id = %s", (trip_id,))
                 if not cur.fetchone():
-                    return jsonify({'error': '找不到該用戶'}), 404
+                    return jsonify({'error': '找不到該行程'}), 404
 
-                # 檢查是否已經分享給該用戶
+                # 檢查是否已經分享
                 cur.execute("""
                     SELECT share_id FROM line_trip_shares 
                     WHERE trip_id = %s AND shared_with_user_id = %s
                 """, (trip_id, shared_user_id))
                 
                 if cur.fetchone():
-                    return jsonify({'error': '已經分享給該用戶'}), 400
-
-                # 新增分享記錄
-                cur.execute("""
-                    INSERT INTO line_trip_shares (trip_id, shared_with_user_id, permission_type)
-                    VALUES (%s, %s, %s)
-                """, (trip_id, shared_user_id, permission_type))
+                    # 如果已經分享，更新權限
+                    cur.execute("""
+                        UPDATE line_trip_shares 
+                        SET permission_type = %s 
+                        WHERE trip_id = %s AND shared_with_user_id = %s
+                    """, (permission_type, trip_id, shared_user_id))
+                else:
+                    # 新增分享記錄
+                    cur.execute("""
+                        INSERT INTO line_trip_shares (trip_id, shared_with_user_id, permission_type)
+                        VALUES (%s, %s, %s)
+                    """, (trip_id, shared_user_id, permission_type))
                 
                 db.commit()
                 return jsonify({'message': '分享成功'}), 200
