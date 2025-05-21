@@ -460,8 +460,9 @@ def update_line_trip_detail(detail_id):
             print(f"分享行程時發生錯誤: {str(e)}")
             return jsonify({'error': str(e)}), 500
         
-        @app.route('/line/trip/<line_user_id>', methods=['GET'])
-        def get_line_trips(line_user_id):
+    # 獲取用戶的行程和分享給他的行程   
+    @app.route('/line/trip/<line_user_id>', methods=['GET'])
+    def get_line_trips(line_user_id):
             db = get_db()
             try:
                 with db.cursor() as cur:
@@ -480,73 +481,9 @@ def update_line_trip_detail(detail_id):
             except Exception as e:
                 return jsonify({'error': str(e)}), 500
             finally:
-                db.close()
+                db.close()    
 
-    # 獲取分享的行程列表
-    @app.route('/line/shared-trips/<line_user_id>', methods=['GET'])
-    def get_shared_trips(line_user_id):
-        db = get_db()
-        try:
-            with db.cursor() as cur:
-                cur.execute("""
-                    SELECT 
-                        t.*, 
-                        s.permission_type,
-                        u.display_name as owner_name
-                    FROM line_trips t
-                    JOIN line_trip_shares s ON t.trip_id = s.trip_id
-                    JOIN line_users u ON t.line_user_id = u.line_user_id
-                    WHERE s.shared_with_user_id = %s
-                    ORDER BY t.start_date ASC
-                """, (line_user_id,))
-                
-                result = cur.fetchall()
-                return jsonify(result), 200
-                
-        except Exception as e:
-            print(f"獲取分享行程時發生錯誤: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-        finally:
-            db.close()
-
-    @app.route('/line/trip-permission/<int:trip_id>', methods=['GET'])
-    def check_trip_permission(trip_id):
-        try:
-            user_id = request.args.get('user_id')
-            if not user_id:
-                return jsonify({'error': '未提供用戶ID'}), 400
-
-            db = get_db()
-            with db.cursor() as cur:
-                # 檢查是否為行程擁有者
-                cur.execute("""
-                    SELECT line_user_id FROM line_trips 
-                    WHERE trip_id = %s
-                """, (trip_id,))
-                trip = cur.fetchone()
-                
-                if not trip:
-                    return jsonify({'error': '找不到該行程'}), 404
-
-                if trip['line_user_id'] == user_id:
-                    return jsonify({'isOwner': True, 'permission': 'edit'}), 200
-
-                # 檢查分享權限
-                cur.execute("""
-                    SELECT permission_type 
-                    FROM line_trip_shares 
-                    WHERE trip_id = %s AND shared_with_user_id = %s
-                """, (trip_id, user_id))
-                
-                share = cur.fetchone()
-                return jsonify({
-                    'isOwner': False,
-                    'permission': share['permission_type'] if share else None
-                }), 200
-
-        except Exception as e:
-            print(f"檢查權限時發生錯誤: {str(e)}")
-            return jsonify({'error': str(e)}), 500
+    
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
