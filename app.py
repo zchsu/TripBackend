@@ -488,5 +488,44 @@ def update_line_trip_detail(detail_id):
         finally:
             db.close()
 
+    @app.route('/line/trip-permission/<int:trip_id>', methods=['GET'])
+    def check_trip_permission(trip_id):
+        try:
+            user_id = request.args.get('user_id')
+            if not user_id:
+                return jsonify({'error': '未提供用戶ID'}), 400
+
+            db = get_db()
+            with db.cursor() as cur:
+                # 檢查是否為行程擁有者
+                cur.execute("""
+                    SELECT line_user_id FROM line_trips 
+                    WHERE trip_id = %s
+                """, (trip_id,))
+                trip = cur.fetchone()
+                
+                if not trip:
+                    return jsonify({'error': '找不到該行程'}), 404
+
+                if trip['line_user_id'] == user_id:
+                    return jsonify({'isOwner': True, 'permission': 'edit'}), 200
+
+                # 檢查分享權限
+                cur.execute("""
+                    SELECT permission_type 
+                    FROM line_trip_shares 
+                    WHERE trip_id = %s AND shared_with_user_id = %s
+                """, (trip_id, user_id))
+                
+                share = cur.fetchone()
+                return jsonify({
+                    'isOwner': False,
+                    'permission': share['permission_type'] if share else None
+                }), 200
+
+        except Exception as e:
+            print(f"檢查權限時發生錯誤: {str(e)}")
+            return jsonify({'error': str(e)}), 500
+
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
