@@ -149,24 +149,7 @@ def add_line_trip():
         print(f"處理請求時發生錯誤: {str(e)}")  # 印出一般錯誤
         return jsonify({'error': str(e)}), 500
 
-# get trip list by user id
-@app.route('/line/trip/<line_user_id>', methods=['GET'])
-def get_line_trips(line_user_id):
-    db = get_db()
-    try:
-        with db.cursor() as cur:
-            cur.execute("""
-                SELECT * FROM line_trips 
-                WHERE line_user_id = %s 
-                ORDER BY start_date ASC
-            """, (line_user_id,))
-            
-            result = cur.fetchall()
-            return jsonify(result), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    finally:
-        db.close()
+
 
 # delete trip
 @app.route('/line/trip/<int:trip_id>', methods=['DELETE'])
