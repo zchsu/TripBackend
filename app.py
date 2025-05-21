@@ -432,17 +432,29 @@ def update_line_trip_detail(detail_id):
                 return jsonify({'error': '缺少必要參數'}), 400
 
             db = get_db()
-            with db.cursor() as cur:
-                # 複製行程到共享用戶
-                cur.execute("""
-                    INSERT INTO line_trip_collaborators 
-                    (trip_id, shared_user_id, created_at)
-                    VALUES (%s, %s, NOW())
-                    ON DUPLICATE KEY UPDATE updated_at = NOW()
-                """, (trip_id, shared_user_id))
-                
-                db.commit()
-                return jsonify({'message': '分享成功'}), 200
+            try:
+                with db.cursor() as cur:
+                    # 先確認行程存在
+                    cur.execute("SELECT trip_id FROM line_trips WHERE trip_id = %s", (trip_id,))
+                    if not cur.fetchone():
+                        return jsonify({'error': '找不到該行程'}), 404
+
+                    # 新增或更新共享記錄
+                    cur.execute("""
+                        INSERT INTO line_trip_collaborators 
+                        (trip_id, shared_user_id, created_at)
+                        VALUES (%s, %s, NOW())
+                        ON DUPLICATE KEY UPDATE updated_at = NOW()
+                    """, (trip_id, shared_user_id))
+                    
+                    db.commit()
+                    return jsonify({'message': '分享成功'}), 200
+
+            except Exception as db_error:
+                print(f"資料庫錯誤: {str(db_error)}")
+                return jsonify({'error': f'資料庫錯誤: {str(db_error)}'}), 500
+            finally:
+                db.close()
 
         except Exception as e:
             print(f"分享行程時發生錯誤: {str(e)}")
