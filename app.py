@@ -420,5 +420,73 @@ def update_line_trip_detail(detail_id):
     finally:
         db.close()
 
+    # 新增分享行程的路由
+    @app.route('/line/trip/share', methods=['POST'])
+    def share_trip():
+        try:
+            data = request.get_json()
+            trip_id = data.get('trip_id')
+            shared_user_id = data.get('shared_user_id')
+            permission_type = data.get('permission_type', 'view')
+
+            if not all([trip_id, shared_user_id]):
+                return jsonify({'error': '缺少必要參數'}), 400
+
+            db = get_db()
+            with db.cursor() as cur:
+                # 檢查用戶是否存在
+                cur.execute("SELECT line_user_id FROM line_users WHERE line_user_id = %s", (shared_user_id,))
+                if not cur.fetchone():
+                    return jsonify({'error': '找不到該用戶'}), 404
+
+                # 檢查是否已經分享給該用戶
+                cur.execute("""
+                    SELECT share_id FROM line_trip_shares 
+                    WHERE trip_id = %s AND shared_with_user_id = %s
+                """, (trip_id, shared_user_id))
+                
+                if cur.fetchone():
+                    return jsonify({'error': '已經分享給該用戶'}), 400
+
+                # 新增分享記錄
+                cur.execute("""
+                    INSERT INTO line_trip_shares (trip_id, shared_with_user_id, permission_type)
+                    VALUES (%s, %s, %s)
+                """, (trip_id, shared_user_id, permission_type))
+                
+                db.commit()
+                return jsonify({'message': '分享成功'}), 200
+
+        except Exception as e:
+            print(f"分享行程時發生錯誤: {str(e)}")
+            return jsonify({'error': str(e)}), 500
+
+    # 獲取分享的行程列表
+    @app.route('/line/shared-trips/<line_user_id>', methods=['GET'])
+    def get_shared_trips(line_user_id):
+        db = get_db()
+        try:
+            with db.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        t.*, 
+                        s.permission_type,
+                        u.display_name as owner_name
+                    FROM line_trips t
+                    JOIN line_trip_shares s ON t.trip_id = s.trip_id
+                    JOIN line_users u ON t.line_user_id = u.line_user_id
+                    WHERE s.shared_with_user_id = %s
+                    ORDER BY t.start_date ASC
+                """, (line_user_id,))
+                
+                result = cur.fetchall()
+                return jsonify(result), 200
+                
+        except Exception as e:
+            print(f"獲取分享行程時發生錯誤: {str(e)}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            db.close()
+
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
