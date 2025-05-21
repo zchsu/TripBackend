@@ -420,6 +420,33 @@ def update_line_trip_detail(detail_id):
     finally:
         db.close()
 
+    @app.route('/line/trip/<line_user_id>', methods=['GET'])
+    def get_line_trips(line_user_id):
+        db = get_db()
+        try:
+            with db.cursor() as cur:
+                # 獲取用戶自己的行程和被分享的行程
+                cur.execute("""
+                    SELECT DISTINCT t.*, 
+                        CASE 
+                            WHEN t.line_user_id = %s THEN 'own'
+                            ELSE 'shared' 
+                        END as trip_type
+                    FROM line_trips t
+                    LEFT JOIN line_trip_collaborators c ON t.trip_id = c.trip_id
+                    WHERE t.line_user_id = %s 
+                    OR c.shared_user_id = %s
+                    ORDER BY t.start_date ASC
+                """, (line_user_id, line_user_id, line_user_id))
+                
+                result = cur.fetchall()
+                return jsonify(result), 200
+        except Exception as e:
+            print(f"獲取行程失敗: {str(e)}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            db.close()
+
     # 新增分享行程的路由
     @app.route('/line/trip/share', methods=['POST'])
     def share_trip():
@@ -434,17 +461,12 @@ def update_line_trip_detail(detail_id):
             db = get_db()
             try:
                 with db.cursor() as cur:
-                    # 先確認行程存在
-                    cur.execute("SELECT trip_id FROM line_trips WHERE trip_id = %s", (trip_id,))
-                    if not cur.fetchone():
-                        return jsonify({'error': '找不到該行程'}), 404
-
-                    # 新增或更新共享記錄
+                    # 新增協作者記錄
                     cur.execute("""
                         INSERT INTO line_trip_collaborators 
-                        (trip_id, shared_user_id, created_at)
-                        VALUES (%s, %s, NOW())
-                        ON DUPLICATE KEY UPDATE updated_at = NOW()
+                        (trip_id, shared_user_id)
+                        VALUES (%s, %s)
+                        ON DUPLICATE KEY UPDATE shared_user_id = shared_user_id
                     """, (trip_id, shared_user_id))
                     
                     db.commit()
@@ -458,30 +480,7 @@ def update_line_trip_detail(detail_id):
 
         except Exception as e:
             print(f"分享行程時發生錯誤: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-        
-    # 獲取用戶的行程和分享給他的行程   
-    @app.route('/line/trip/<line_user_id>', methods=['GET'])
-    def get_line_trips(line_user_id):
-            db = get_db()
-            try:
-                with db.cursor() as cur:
-                    # 獲取用戶自己的行程和分享給他的行程
-                    cur.execute("""
-                        SELECT DISTINCT t.* 
-                        FROM line_trips t
-                        LEFT JOIN line_trip_collaborators c ON t.trip_id = c.trip_id
-                        WHERE t.line_user_id = %s 
-                        OR c.shared_user_id = %s
-                        ORDER BY t.start_date ASC
-                    """, (line_user_id, line_user_id))
-                    
-                    result = cur.fetchall()
-                    return jsonify(result), 200
-            except Exception as e:
-                return jsonify({'error': str(e)}), 500
-            finally:
-                db.close()    
+            return jsonify({'error': str(e)}), 500  
 
     
 
