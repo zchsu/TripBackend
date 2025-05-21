@@ -149,7 +149,24 @@ def add_line_trip():
         print(f"處理請求時發生錯誤: {str(e)}")  # 印出一般錯誤
         return jsonify({'error': str(e)}), 500
 
-
+# get trip list by user id
+@app.route('/line/trip/<line_user_id>', methods=['GET'])
+def get_line_trips(line_user_id):
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            cur.execute("""
+                SELECT * FROM line_trips 
+                WHERE line_user_id = %s 
+                ORDER BY start_date ASC
+            """, (line_user_id,))
+            
+            result = cur.fetchall()
+            return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
 
 # delete trip
 @app.route('/line/trip/<int:trip_id>', methods=['DELETE'])
@@ -449,12 +466,12 @@ def share_trip():
                 if not cur.fetchone():
                     return jsonify({'error': '找不到該行程'}), 404
 
-                # 新增共同編輯者記錄
+                # 新增共同編輯者記錄 - 移除 created_by 欄位
                 cur.execute("""
                     INSERT INTO line_trip_collaborators 
-                    (trip_id, shared_user_id, created_by)
-                    VALUES (%s, %s, %s)
-                    ON DUPLICATE KEY UPDATE shared_user_id = shared_user_id
+                    (trip_id, shared_user_id)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE shared_user_id = VALUES(shared_user_id)
                 """, (trip_id, shared_user_id))
                 
                 db.commit()
