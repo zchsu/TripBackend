@@ -1,9 +1,10 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import pymysql
 import os
 from datetime import datetime
 import json
+import requests
 
 # LINE Bot SDK
 from linebot.v3.messaging import MessagingApi
@@ -31,6 +32,7 @@ def get_db():
 def index():
     return "Line Bot Server is running!"
 
+#test
 @app.route("/", methods=['POST'])
 def linebot():
     body = request.get_data(as_text=True)
@@ -401,12 +403,13 @@ def update_line_trip_detail(detail_id):
     finally:
         db.close()
 
+# 獲取用戶自己的行程和被分享的行程
 @app.route('/line/trip/<line_user_id>', methods=['GET'])
 def get_line_trips(line_user_id):
     db = get_db()
     try:
         with db.cursor() as cur:
-            # 獲取用戶自己的行程和被分享的行程
+            
             cur.execute("""
                 SELECT DISTINCT t.*, 
                     CASE 
@@ -428,7 +431,7 @@ def get_line_trips(line_user_id):
     finally:
         db.close()
 
-# 新增分享行程的路由
+# 分享行程
 @app.route('/line/trip/share', methods=['POST'])
 def share_trip():
     try:
@@ -447,7 +450,7 @@ def share_trip():
                 if not cur.fetchone():
                     return jsonify({'error': '找不到該行程'}), 404
 
-                # 新增共同編輯者記錄 - 移除 created_by 欄位
+                # 新增共同編輯者記錄
                 cur.execute("""
                     INSERT INTO line_trip_collaborators 
                     (trip_id, shared_user_id)
@@ -468,7 +471,21 @@ def share_trip():
         print(f"分享行程時發生錯誤: {str(e)}")
         return jsonify({'error': str(e)}), 500  
 
-    
+    @app.route('/proxy/owlocker_info')
+    def proxy_owlocker_info():
+        try:
+            r = requests.get('https://owlocker.com/api/info', timeout=10)
+            return Response(r.content, status=r.status_code, content_type=r.headers.get('Content-Type', 'application/json'))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/proxy/owlocker_locker/<site_no>')
+    def proxy_owlocker_locker(site_no):
+        try:
+            r = requests.get(f'https://owlocker.com/api/locker/{site_no}', timeout=10)
+            return Response(r.content, status=r.status_code, content_type=r.headers.get('Content-Type', 'application/json'))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
