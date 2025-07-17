@@ -487,5 +487,15 @@ def share_trip():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/proxy/google_autocomplete')
+    def google_autocomplete():
+        input_text = request.args.get('input')
+        language = request.args.get('language', 'zh-TW')
+        components = request.args.get('components', 'country:tw')
+        key = os.environ.get('REACT_APP_GOOGLE_MAPS_API_KEY')
+        url = f'https://maps.googleapis.com/maps/api/place/autocomplete/json?input={input_text}&language={language}&components={components}&key={key}'
+        r = requests.get(url)
+        return jsonify(r.json())
+
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
